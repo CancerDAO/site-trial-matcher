@@ -1,0 +1,3 @@
+{"patient_id":"PT-SCLC","country":"中国","age":62,"sex":"男","cancer_type":"小细胞肺癌","histology":"小细胞癌","disease_stage":"广泛期","mutations":[],"ecog":1,"prior_therapies":["依托泊苷联合顺铂"],"treatment_lines_completed":1,"comorbidities":[],"pregnant":false}
+{"patient_id":"PT-BREAST-HER2","country":"中国","age":45,"sex":"女","cancer_type":"乳腺癌","histology":"浸润性导管癌","disease_stage":"转移性","biomarkers":["HER2阳性"],"ecog":1,"prior_therapies":["曲妥珠单抗"],"treatment_lines_completed":1,"comorbidities":[],"pregnant":false}
+{"patient_id":"PT-LUNG-MISSING","country":"中国","cancer_type":"非小细胞肺癌","histology":"肺腺癌","disease_stage":"晚期","mutations":[],"prior_therapies":[],"comorbidities":[]}

@@ -1,0 +1,1 @@
+{"patient_id":"PT-LUNG-01","country":"中国","age":56,"sex":"女","cancer_type":"非小细胞肺癌","histology":"肺腺癌","disease_stage":"转移性","mutations":["EGFR L858R"],"ecog":1,"prior_therapies":["奥希替尼"],"treatment_lines_completed":1,"comorbidities":[],"pregnant":false}

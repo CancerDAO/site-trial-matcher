@@ -1,0 +1,4 @@
+interface:
+  display_name: "中国试验排除预筛"
+  short_description: "基于明确患者事实和试验原文执行保守排除预筛"
+  default_prompt: "使用 $china-trial-exclusion-gater 对这些中国试验进行排除优先预筛，并保留所有不确定项目供医学复核。"

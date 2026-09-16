@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+data/*.db
+data/*.db-*
+data/who-mcp-probe.json
+data/who-mcp-china-recent-100.json
+outputs/
+templates/*.inspect.ndjson
+tmp/
+node_modules/
