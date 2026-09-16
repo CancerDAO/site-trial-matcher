@@ -10,3 +10,6 @@ outputs/
 templates/*.inspect.ndjson
 tmp/
 node_modules/
+var/
+.env
+.webdeps/

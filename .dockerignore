@@ -1,0 +1,11 @@
+.git
+.pytest_cache
+.venv
+__pycache__
+*.pyc
+data/*.db
+data/*.db-*
+node_modules
+outputs
+tmp
+var

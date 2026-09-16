@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,17 @@ SUPPORTIVE_CARE_TERMS = {
     "cachexia", "nutrition", "rehabilitation", "anxiety", "distress", "fatigue", "nausea", "sleep",
     "支持治疗", "姑息治疗", "生活质量", "疼痛", "镇痛", "黏膜炎", "血小板减少", "恶病质", "营养", "康复", "焦虑", "疲乏", "恶心", "睡眠",
 }
+
+
+class ModelRunCancelled(RuntimeError):
+    pass
+
+
+def safe_patient_job_key(patient_id: str, patient_index: int) -> str:
+    digest = hashlib.sha256(patient_id.encode("utf-8")).hexdigest()[:12]
+    return f"p{patient_index:04d}-{digest}"
+
+
 MODEL_PATIENT_FIELDS = {
     "age", "sex", "cancer_type", "primary_disease", "histology", "disease_stage", "stage",
     "mutations", "biomarkers", "biomarkers_known", "ecog", "prior_therapies",
@@ -114,7 +126,7 @@ def prepare_model_jobs(db_path: str | Path, patients_path: str | Path, determini
     root = Path(run_dir); jobs_dir = root / "jobs"; results_dir = root / "results"; jobs_dir.mkdir(parents=True, exist_ok=True); results_dir.mkdir(parents=True, exist_ok=True)
     manifests: list[dict[str, Any]] = []
     with connect(db_path, readonly=True) as connection:
-        for patient_result in deterministic["results"]:
+        for patient_index, patient_result in enumerate(deterministic["results"], start=1):
             patient_id = str(patient_result["patient_id"]); patient = patients[patient_id]
             # Partnership is an output dimension only. Keep medical job ordering stable
             # when an organization changes between partner and non-partner status.
@@ -125,7 +137,11 @@ def prepare_model_jobs(db_path: str | Path, patients_path: str | Path, determini
             for mode, trials in grouped.items():
                 batch_size = scope_batch_size if mode == "scope" else eligibility_batch_size
                 for number, batch in enumerate(_chunks(trials, batch_size), start=1):
-                    job_id = f"{patient_id}-{mode}-{number:04d}"; job_path = jobs_dir / f"{job_id}.json"; result_path = results_dir / f"{job_id}.json"
+                    # Patient identifiers are untrusted web input. Keep them in
+                    # the payload and out of filesystem paths.
+                    patient_key = safe_patient_job_key(patient_id, patient_index)
+                    job_id = f"{patient_key}-{mode}-{number:04d}"
+                    job_path = jobs_dir / f"{job_id}.json"; result_path = results_dir / f"{job_id}.json"
                     job = {"job_id": job_id, "stage": "exclusion_gater", "mode": mode, "patient_id": patient_id,
                         "patient": _model_patient(patient), "trials": batch, "expected_trial_ids": [trial["trial_id"] for trial in batch],
                         "skill_path": str(Path(skill_path).resolve())}
@@ -183,7 +199,9 @@ def validate_model_output(job: dict[str, Any], payload: dict[str, Any]) -> dict[
     return {"analyzed_trials": normalized}
 
 
-def _execute_one(item: dict[str, Any]) -> dict[str, Any]:
+def _execute_one(item: dict[str, Any], should_cancel=lambda: False) -> dict[str, Any]:
+    if should_cancel():
+        raise ModelRunCancelled("model run cancelled")
     job = json.loads(Path(item["job_path"]).read_text(encoding="utf-8")); output = Path(item["result_path"])
     if output.is_file():
         try:
@@ -193,7 +211,11 @@ def _execute_one(item: dict[str, Any]) -> dict[str, Any]:
             pass
     validation_retries = int(os.environ.get("MINIMAX_VALIDATION_RETRIES", "5")); feedback = ""; attempts: list[dict[str, Any]] = []
     for validation_attempt in range(validation_retries + 1):
+        if should_cancel():
+            raise ModelRunCancelled("model run cancelled")
         attempt_job = {**job, "validation_feedback": feedback or None}; payload, api_meta = call_minimax(attempt_job); attempts.append(api_meta)
+        if should_cancel():
+            raise ModelRunCancelled("model run cancelled")
         try:
             validated = validate_model_output(job, payload); break
         except ValueError as error:
@@ -208,16 +230,35 @@ def _execute_one(item: dict[str, Any]) -> dict[str, Any]:
     return {"job_id": item["job_id"], "status": "completed", "trial_count": item["trial_count"], **api_meta}
 
 
-def execute_model_jobs(run_dir: str | Path, *, workers: int = 8) -> dict[str, Any]:
+def execute_model_jobs(run_dir: str | Path, *, workers: int = 8, should_cancel=lambda: False,
+                       on_progress=None) -> dict[str, Any]:
     root = Path(run_dir); manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8")); started = time.perf_counter(); results: list[dict[str, Any]] = []
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(_execute_one, item): item for item in manifest["jobs"]}
-        for future in as_completed(futures):
-            item = futures[future]
-            try:
-                results.append(future.result())
-            except Exception as error:
-                results.append({"job_id": item["job_id"], "status": "failed", "trial_count": item["trial_count"], "error": str(error)})
+    jobs = iter(manifest["jobs"]); pending = {}; cancelled = False
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
+        def submit_next() -> bool:
+            try: item = next(jobs)
+            except StopIteration: return False
+            pending[executor.submit(_execute_one, item, should_cancel)] = item
+            return True
+        for _ in range(max(1, workers)):
+            if not submit_next(): break
+        while pending:
+            if should_cancel(): cancelled = True
+            done, _ = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
+            for future in done:
+                item = pending.pop(future)
+                try:
+                    results.append(future.result())
+                except ModelRunCancelled:
+                    cancelled = True
+                except Exception as error:
+                    results.append({"job_id": item["job_id"], "status": "failed", "trial_count": item["trial_count"], "error": str(error)})
+                if on_progress:
+                    on_progress(len(results), manifest["job_count"])
+                if not cancelled:
+                    submit_next()
+        if cancelled:
+            raise ModelRunCancelled("model run cancelled")
     summary = {"job_count": len(results), "trial_assignments": sum(item["trial_count"] for item in results),
         "failed_job_count": sum(item["status"] == "failed" for item in results),
         "elapsed_ms": round((time.perf_counter()-started)*1000, 3), "results": sorted(results, key=lambda item: item["job_id"])}

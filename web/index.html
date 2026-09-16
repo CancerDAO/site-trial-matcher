@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" href="data:,">
+  <title>中国临床试验批量预筛 Demo</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">CancerDAO</p>
+      <h1 data-i18n="title">中国临床试验批量预筛</h1>
+    </div>
+    <div class="top-actions">
+      <span id="datasetBadge" class="dataset-badge" data-i18n="datasetLoading">正在读取试验库</span>
+      <select id="language" aria-label="Language">
+        <option value="zh">中文</option>
+        <option value="en">English</option>
+      </select>
+    </div>
+  </header>
+
+  <main>
+    <section class="input-band" aria-labelledby="inputTitle">
+      <div class="section-heading">
+        <div>
+          <h2 id="inputTitle" data-i18n="inputTitle">批量患者资料</h2>
+          <p data-i18n="inputHint">每行一个 JSON 对象。仅使用临床字段，不要填写姓名、电话、证件号或详细地址。</p>
+        </div>
+        <button id="sampleButton" class="secondary" type="button" data-i18n="loadSample">载入示例</button>
+      </div>
+      <textarea id="patientInput" spellcheck="false" aria-label="Patients JSONL"></textarea>
+      <div class="controls">
+        <fieldset class="mode-control">
+          <legend data-i18n="mode">模式</legend>
+          <label><input type="radio" name="mode" value="deterministic" checked> <span data-i18n="deterministic">本地确定性预筛</span></label>
+          <label id="fullModeLabel"><input type="radio" name="mode" value="full"> <span data-i18n="full">完整排除核查</span></label>
+        </fieldset>
+        <button id="startButton" class="primary" type="button" data-i18n="start">开始匹配</button>
+      </div>
+      <p id="inputError" class="error" role="alert" hidden></p>
+    </section>
+
+    <section id="runBand" class="run-band" aria-live="polite" hidden>
+      <div class="run-summary">
+        <div>
+          <p class="label" data-i18n="currentStage">当前阶段</p>
+          <h2 id="stageText">准备阶段</h2>
+          <p id="statusText"></p>
+        </div>
+        <button id="cancelButton" class="danger" type="button" data-i18n="cancel">退出匹配</button>
+      </div>
+      <div class="progress-track" aria-label="Progress">
+        <div id="progressBar" class="progress-bar"></div>
+      </div>
+    </section>
+
+    <section id="resultsBand" class="results-band" hidden>
+      <div class="section-heading">
+        <div>
+          <h2 data-i18n="results">预筛结果</h2>
+          <p data-i18n="resultNotice">“潜在试验”仅表示没有充分排除证据，仍需研究中心确认。</p>
+        </div>
+        <button id="newRunButton" class="secondary" type="button" data-i18n="newRun">新建任务</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th data-i18n="patient">患者编号</th><th data-i18n="potential">潜在试验</th><th data-i18n="excluded">已排除</th><th data-i18n="partner">合作方潜在试验</th><th></th></tr></thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+      <div id="patientDetail" class="patient-detail" hidden>
+        <h3 id="patientDetailTitle"></h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th data-i18n="registry">注册号</th><th data-i18n="trial">试验</th><th data-i18n="organization">机构</th><th data-i18n="status">状态</th></tr></thead>
+            <tbody id="trialDetailBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="cancelDialog">
+    <form method="dialog">
+      <h2 data-i18n="cancelTitle">确认退出匹配？</h2>
+      <p data-i18n="cancelBody">任务将停止，尚未完成的中间数据会被清理。</p>
+      <div class="dialog-actions">
+        <button value="close" class="secondary" data-i18n="continue">继续匹配</button>
+        <button id="confirmCancel" value="confirm" class="danger" data-i18n="confirmCancel">确认退出</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

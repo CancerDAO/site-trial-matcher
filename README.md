@@ -31,9 +31,8 @@ python -m china_trial_demo.cli import-xml --db data/demo_recent.db --xml path\pa
 python -m china_trial_demo.cli import-workbook --db data/demo_recent.db --workbook path\合作方模板.xlsx
 
 # MCP 密钥只放环境变量，不写入配置或日志
-$env:WHO_MCP_URL = "http://43.163.116.103/mcp"
+$env:WHO_MCP_URL = "https://mcp.example.com/mcp"
 $env:WHO_MCP_API_KEY = Read-Host "WHO MCP API Key"
-$env:WHO_MCP_ALLOW_INSECURE_HTTP = "1"
 # 严格模式会完整分页后再按解析日期排序；未到结果末尾会拒绝生成
 python -m china_trial_demo.cli fetch-mcp --out data/who-mcp-china-latest-200.json --limit 200 --scan-limit 20000 --workers 8
 
@@ -64,3 +63,17 @@ python -m china_trial_demo.cli merge-model-results --run-dir outputs/model-run-l
 本项目是预筛工具，不替代研究者确认和临床判断。
 
 最新 demo 数据与医学流程审计见 [2026-09-03 审计报告](docs/MEDICAL_AUDIT_2026-09-03.md)。
+
+## 网页 Demo
+
+项目现提供可独立部署的 FastAPI 服务和薄前端。试验 SQLite 保存在服务器本地，浏览器不能读取数据库、MCP Key 或模型 Key；任务使用服务器生成的 UUID，支持进度恢复、结果分页和退出清理。
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e ".[test]"
+Copy-Item .env.example .env
+china-trial-web
+```
+
+打开 `http://127.0.0.1:8080`。默认只执行确定性预筛；配置 `SITE_TRIAL_MODEL_ENABLED=1` 和服务端 `MINIMAX_API_KEY` 后才开放完整模型排除核查。部署和 CancerDAO 平台接入见 [网页部署说明](docs/WEB_DEPLOYMENT.md)。
