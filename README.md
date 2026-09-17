@@ -76,4 +76,17 @@ Copy-Item .env.example .env
 china-trial-web
 ```
 
-打开 `http://127.0.0.1:8080`。默认只执行确定性预筛；配置 `SITE_TRIAL_MODEL_ENABLED=1` 和服务端 `MINIMAX_API_KEY` 后才开放完整模型排除核查。部署和 CancerDAO 平台接入见 [网页部署说明](docs/WEB_DEPLOYMENT.md)。
+打开 `http://127.0.0.1:8080`。默认只执行确定性预筛；配置 `SITE_TRIAL_MODEL_ENABLED=1` 和服务端 OpenAI-compatible 模型变量后开放受控疾病映射与完整模型排除核查。部署和 CancerDAO 平台接入见 [网页部署说明](docs/WEB_DEPLOYMENT.md)。
+
+### 受控癌种映射
+
+每名患者必须在任务创建前唯一映射到版本化 `data/disease_ontology.json` 中的规范癌种。
+服务依次核对 `cancer_type`、`primary_disease`、`histology` 和
+`disease_stage`/`stage`，并将原始癌种、规范癌种、映射方法、证据和置信度写入
+结果的 `patient_disease`。无法映射或存在多个候选时返回 HTTP 422，且不创建任务文件。
+
+需要用大模型归一化时，客户端应先读取 `GET /api/disease-concepts`，要求模型只能
+选择接口返回的 `label`，不得自由生成概念。提交时使用 `canonical_cancer_type`、
+`disease_mapping_method="model_constrained"`、0 到 1 的
+`disease_mapping_confidence`，以及来自结构化档案的逐字
+`disease_mapping_evidence`。低于 0.80 的模型映射会被拒绝，原始癌种始终保留用于审计。

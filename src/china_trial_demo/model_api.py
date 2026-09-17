@@ -69,17 +69,40 @@ def extract_json(text: str) -> dict[str, Any]:
     raise ValueError("模型未返回有效JSON对象")
 
 
-def call_minimax(job: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    key = os.environ.get("MINIMAX_API_KEY", "").strip()
-    if not key: raise ValueError("请通过环境变量MINIMAX_API_KEY提供密钥")
-    base_url = os.environ.get("MINIMAX_BASE_URL", "https://api.minimaxi.com/v1").rstrip("/")
-    if not base_url.startswith("https://"): raise ValueError("MINIMAX_BASE_URL必须使用HTTPS")
-    model = os.environ.get("MINIMAX_MODEL", "MiniMax-M2.7")
-    body = {"model": model, "messages": [{"role": "system", "content": "只返回一个符合契约的JSON对象。"}, {"role": "user", "content": build_prompt(job)}],
-            "temperature": float(os.environ.get("MINIMAX_TEMPERATURE", "0.1")), "max_completion_tokens": _integer("MINIMAX_MAX_COMPLETION_TOKENS", 8192)}
+def call_minimax_prompt(
+    prompt: str, *, system: str = "只返回一个符合契约的JSON对象。",
+    max_completion_tokens: int | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    key = os.environ.get("SITE_TRIAL_MODEL_API_KEY", "").strip() or os.environ.get("MINIMAX_API_KEY", "").strip()
+    if not key: raise ValueError("请通过环境变量SITE_TRIAL_MODEL_API_KEY提供密钥")
+    base_url = os.environ.get(
+        "SITE_TRIAL_MODEL_BASE_URL",
+        os.environ.get("MINIMAX_BASE_URL", "https://api.minimaxi.com/v1"),
+    ).rstrip("/")
+    if not base_url.startswith("https://"): raise ValueError("SITE_TRIAL_MODEL_BASE_URL必须使用HTTPS")
+    model = os.environ.get("SITE_TRIAL_MODEL_NAME", os.environ.get("MINIMAX_MODEL", "MiniMax-M2.7"))
+    default_temperature = "1" if model.casefold() == "k3" or "kimi.com" in base_url.casefold() else "0.1"
+    body = {"model": model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+            "temperature": float(os.environ.get(
+                "SITE_TRIAL_MODEL_TEMPERATURE",
+                os.environ.get("MINIMAX_TEMPERATURE", default_temperature),
+            ))}
+    token_parameter = os.environ.get("SITE_TRIAL_MODEL_TOKEN_PARAMETER", "").strip()
+    if not token_parameter:
+        token_parameter = "max_tokens" if "kimi.com" in base_url.casefold() else "max_completion_tokens"
+    if token_parameter not in {"max_tokens", "max_completion_tokens"}:
+        raise ValueError("SITE_TRIAL_MODEL_TOKEN_PARAMETER必须为max_tokens或max_completion_tokens")
+    body[token_parameter] = max_completion_tokens or _integer(
+                "SITE_TRIAL_MODEL_MAX_COMPLETION_TOKENS",
+                _integer("MINIMAX_MAX_COMPLETION_TOKENS", 8192),
+            )
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json"}
+    if "kimi.com" in base_url.casefold():
+        headers["User-Agent"] = os.environ.get("SITE_TRIAL_MODEL_USER_AGENT", "CancerDAO-TrialMatcher/0.3")
     request = urllib.request.Request(f"{base_url}/chat/completions", data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json"}, method="POST")
-    retries = _integer("MINIMAX_API_RETRIES", 5); timeout = _integer("MINIMAX_API_TIMEOUT_SECONDS", 180)
+        headers=headers, method="POST")
+    retries = _integer("SITE_TRIAL_MODEL_API_RETRIES", _integer("MINIMAX_API_RETRIES", 5))
+    timeout = _integer("SITE_TRIAL_MODEL_API_TIMEOUT_SECONDS", _integer("MINIMAX_API_TIMEOUT_SECONDS", 180))
     started = time.perf_counter()
     for attempt in range(retries + 1):
         retry_delay = min(2**attempt, 30)
@@ -88,16 +111,24 @@ def call_minimax(job: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
                 raw = json.loads(response.read().decode("utf-8")); choice = (raw.get("choices") or [{}])[0] or {}
                 if choice.get("finish_reason") in {"length", "max_tokens"}: raise RuntimeError("模型输出被截断")
                 content = ((choice.get("message") or {}).get("content") or "")
+                if isinstance(content, list):
+                    content = "\n".join(
+                        str(item.get("text") or "") for item in content if isinstance(item, dict)
+                    )
                 return extract_json(str(content)), {"model": raw.get("model") or model, "usage": raw.get("usage") or {},
                     "elapsed_ms": round((time.perf_counter()-started)*1000, 3), "attempts": attempt+1}
         except urllib.error.HTTPError as error:
             detail = error.read(1000).decode("utf-8", errors="replace")
-            if error.code not in RETRYABLE or attempt == retries: raise RuntimeError(f"MiniMax HTTP {error.code}: {detail}") from error
+            if error.code not in RETRYABLE or attempt == retries: raise RuntimeError(f"模型API HTTP {error.code}: {detail}") from error
             if error.code == 429:
                 try: retry_delay = max(retry_delay, float(error.headers.get("Retry-After") or 0))
                 except (TypeError, ValueError): pass
                 retry_delay = max(retry_delay, 10)
         except (urllib.error.URLError, TimeoutError) as error:
-            if attempt == retries: raise RuntimeError(f"MiniMax连接失败：{error}") from error
+            if attempt == retries: raise RuntimeError(f"模型API连接失败：{error}") from error
         time.sleep(retry_delay)
     raise AssertionError("unreachable")
+
+
+def call_minimax(job: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    return call_minimax_prompt(build_prompt(job))

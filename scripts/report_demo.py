@@ -11,7 +11,7 @@ result = match_batch(
     "data/demo_recent.db",
     "examples/patient_demo.jsonl",
     "outputs/demo-result-one-patient.json",
-    aliases_path="data/cancer_aliases.json",
+    aliases_path="data/disease_ontology.json",
 )
 prepare_model_jobs(
     "data/demo_recent.db",

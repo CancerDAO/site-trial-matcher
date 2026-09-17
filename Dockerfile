@@ -11,7 +11,7 @@ WORKDIR /app
 
 COPY pyproject.toml README.md ./
 COPY src ./src
-COPY data/cancer_aliases.json data/who-mcp-china-latest-200.json ./data/
+COPY data/disease_ontology.json data/cancer_aliases.json data/who-mcp-china-latest-200.json ./data/
 COPY skills ./skills
 COPY web ./web
 
