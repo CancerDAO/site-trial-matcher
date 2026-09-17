@@ -15,7 +15,7 @@ class ImporterTests(unittest.TestCase):
     def test_single_page_v4_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source = ROOT / "outputs" / "019ff196-7dcc-7242-8a16-64720facd020" / "合作方单试验填写表_v4.xlsx"
+            source = ROOT / "templates" / "合作方单试验填写表_v4.xlsx"
             workbook = load_workbook(source)
             sheet = workbook["单试验填写表"]
             values = {
@@ -47,7 +47,7 @@ class ImporterTests(unittest.TestCase):
     def test_generated_template_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source = ROOT / "outputs" / "019ff196-7dcc-7242-8a16-64720facd020" / "合作方临床试验数据填写模板_v3.xlsx"
+            source = ROOT / "templates" / "合作方临床试验数据填写模板_v3.xlsx"
             workbook = load_workbook(source)
 
             def write(sheet_name, row):
