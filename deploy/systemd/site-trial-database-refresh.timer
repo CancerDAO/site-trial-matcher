@@ -1,0 +1,12 @@
+[Unit]
+Description=Weekly CancerDAO site trial matcher database refresh
+
+[Timer]
+OnCalendar=Sun *-*-* 03:20:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=20m
+Unit=site-trial-database-refresh.service
+
+[Install]
+WantedBy=timers.target
+

@@ -11,6 +11,7 @@ from .pipeline import match_batch
 from .model_screening import execute_model_jobs, merge_model_results, prepare_model_jobs
 from .registry_importer import import_chictr_xml, import_mcp_snapshot
 from .who_mcp_client import fetch_recent_china_trials, hydrate_snapshot
+from .database_refresh import refresh_database
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -38,6 +39,17 @@ def parser() -> argparse.ArgumentParser:
     hydrate.add_argument("--snapshot", type=Path, required=True); hydrate.add_argument("--workers", type=int, default=16)
     import_mcp = commands.add_parser("import-mcp")
     import_mcp.add_argument("--db", type=Path, required=True); import_mcp.add_argument("--snapshot", type=Path, required=True)
+    refresh = commands.add_parser("refresh-database")
+    refresh.add_argument("--db", type=Path, required=True)
+    refresh.add_argument("--snapshot", type=Path, required=True)
+    refresh.add_argument("--limit", type=int, default=300)
+    refresh.add_argument("--workers", type=int, default=16)
+    refresh.add_argument("--scan-limit", type=int, default=5000)
+    refresh.add_argument("--allow-partial", action="store_true")
+    refresh.add_argument("--reuse-snapshot", action="store_true")
+    refresh.add_argument("--min-trials", type=int, default=1)
+    refresh.add_argument("--workbook", type=Path, action="append", default=[])
+    refresh.add_argument("--xml", type=Path, action="append", default=[])
     match = commands.add_parser("match-batch")
     match.add_argument("--db", type=Path, required=True)
     match.add_argument("--patients", type=Path, required=True)
@@ -84,6 +96,13 @@ def main() -> None:
         result = hydrate_snapshot(args.snapshot, workers=args.workers)
     elif args.command == "import-mcp":
         result = import_mcp_snapshot(args.db, args.snapshot)
+    elif args.command == "refresh-database":
+        result = refresh_database(
+            args.db, args.snapshot, fetch=not args.reuse_snapshot,
+            limit=args.limit, workers=args.workers, scan_limit=args.scan_limit,
+            allow_partial=args.allow_partial, min_trials=args.min_trials,
+            workbooks=args.workbook, xml_files=args.xml,
+        )
     elif args.command == "match-batch":
         result = match_batch(args.db, args.patients, args.out, aliases_path=args.aliases, candidate_limit=args.candidate_limit or None)
     elif args.command == "prepare-model-jobs":
