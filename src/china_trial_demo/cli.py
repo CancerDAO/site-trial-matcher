@@ -43,7 +43,7 @@ def parser() -> argparse.ArgumentParser:
     match.add_argument("--patients", type=Path, required=True)
     match.add_argument("--out", type=Path, required=True)
     match.add_argument("--candidate-limit", type=int, default=0, help="0 表示不截断；正整数仅用于调试")
-    match.add_argument("--aliases", type=Path, default=PROJECT_ROOT / "data" / "cancer_aliases.json")
+    match.add_argument("--aliases", type=Path, default=PROJECT_ROOT / "data" / "disease_ontology.json")
     prepare_model = commands.add_parser("prepare-model-jobs")
     prepare_model.add_argument("--db", type=Path, required=True)
     prepare_model.add_argument("--patients", type=Path, required=True)

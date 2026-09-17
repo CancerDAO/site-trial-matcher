@@ -64,14 +64,18 @@ class WebSettings:
                 "SITE_TRIAL_SNAPSHOT", project_root / "data" / "who-mcp-china-latest-200.json"
             )).resolve(),
             aliases_path=Path(os.environ.get(
-                "SITE_TRIAL_ALIASES", project_root / "data" / "cancer_aliases.json"
+                "SITE_TRIAL_ONTOLOGY",
+                os.environ.get("SITE_TRIAL_ALIASES", project_root / "data" / "disease_ontology.json"),
             )).resolve(),
             skill_path=Path(os.environ.get(
                 "SITE_TRIAL_SKILL", project_root / "skills" / "china-trial-exclusion-gater" / "SKILL.md"
             )).resolve(),
             model_enabled=(
                 os.environ.get("SITE_TRIAL_MODEL_ENABLED", "0") == "1"
-                and bool(os.environ.get("MINIMAX_API_KEY", "").strip())
+                and bool(
+                    os.environ.get("SITE_TRIAL_MODEL_API_KEY", "").strip()
+                    or os.environ.get("MINIMAX_API_KEY", "").strip()
+                )
             ),
             model_workers=max(1, min(int(os.environ.get("SITE_TRIAL_MODEL_WORKERS", "4")), 8)),
             # One persisted queue owns model concurrency. Multiple process-local

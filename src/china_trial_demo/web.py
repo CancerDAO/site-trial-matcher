@@ -5,13 +5,15 @@ import math
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .disease_mapping import map_patients_with_model
+from .normalization import DiseaseMappingError, canonical_disease_concepts, load_aliases, normalize_patient
 from .web_service import RunManager, RunNotFound, WebSettings, ensure_dataset
 
 
@@ -135,12 +137,32 @@ def create_app(settings: Optional[WebSettings] = None) -> FastAPI:
 
     @app.get("/healthz")
     def health(settings: Annotated[WebSettings, Depends(_settings)]):
-        return {"ok": True, "model_enabled": settings.model_enabled}
+        ontology = load_aliases(settings.aliases_path)
+        return {
+            "ok": True,
+            "model_enabled": settings.model_enabled,
+            "disease_ontology_version": ontology.ontology_version,
+        }
 
     @app.get("/api/dataset", dependencies=[Depends(require_access)])
     def dataset(settings: Annotated[WebSettings, Depends(_settings)]):
         from .web_service import dataset_metadata
-        return {**dataset_metadata(settings.db_path), "model_enabled": settings.model_enabled}
+        ontology = load_aliases(settings.aliases_path)
+        return {
+            **dataset_metadata(settings.db_path),
+            "model_enabled": settings.model_enabled,
+            "disease_ontology_version": ontology.ontology_version,
+            "disease_concept_count": len(ontology.concepts),
+        }
+
+    @app.get("/api/disease-concepts", dependencies=[Depends(require_access)])
+    def disease_concepts(settings: Annotated[WebSettings, Depends(_settings)]):
+        ontology = load_aliases(settings.aliases_path)
+        return {
+            "schema_version": ontology.schema_version,
+            "ontology_version": ontology.ontology_version,
+            "concepts": canonical_disease_concepts(ontology),
+        }
 
     @app.post("/api/runs", status_code=202, dependencies=[Depends(require_access)])
     def create_run(
@@ -154,7 +176,48 @@ def create_app(settings: Optional[WebSettings] = None) -> FastAPI:
         patient_ids = [item["patient_id"] for item in patients]
         if len(patient_ids) != len(set(patient_ids)):
             raise HTTPException(status_code=422, detail="duplicate patient_id")
-        return manager.create(patients, mode=payload.mode)
+        ontology = load_aliases(settings.aliases_path)
+        prepared: list[dict[str, Any]] = []
+        unresolved: list[tuple[int, dict[str, Any]]] = []
+        try:
+            for index, patient in enumerate(patients):
+                try:
+                    normalized = normalize_patient(patient, ontology)
+                    mapping = normalized["disease_mapping"]
+                    prepared.append({
+                        **patient,
+                        "canonical_disease_id": normalized["canonical_disease_id"],
+                        "canonical_cancer_type": normalized["canonical_cancer_type"],
+                        "disease_mapping_method": mapping["method"],
+                        "disease_mapping_confidence": mapping["confidence"],
+                        "disease_mapping_evidence": mapping["evidence"],
+                    })
+                except DiseaseMappingError as error:
+                    if error.code != "unmapped_disease" or not settings.model_enabled:
+                        raise
+                    prepared.append(patient)
+                    unresolved.append((index, patient))
+            if unresolved:
+                mapped, _ = map_patients_with_model(
+                    [patient for _, patient in unresolved], ontology
+                )
+                for (index, _), patient in zip(unresolved, mapped):
+                    prepared[index] = patient
+                for patient in prepared:
+                    normalize_patient(patient, ontology)
+        except DiseaseMappingError as error:
+            raise HTTPException(status_code=422, detail={
+                "code": error.code,
+                "patient_id": error.patient_id,
+                "candidates": error.candidates,
+                "message": "患者癌种无法唯一映射到受控疾病概念，任务未启动。",
+            }) from None
+        except Exception as error:
+            raise HTTPException(status_code=502, detail={
+                "code": "disease_mapping_model_failed",
+                "message": str(error)[:300],
+            }) from None
+        return manager.create(prepared, mode=payload.mode)
 
     @app.get("/api/runs/{run_id}", dependencies=[Depends(require_access)])
     def run_status(run_id: str, manager: Annotated[RunManager, Depends(_manager)]):

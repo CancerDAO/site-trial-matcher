@@ -38,6 +38,7 @@ curl -fsS http://127.0.0.1:8080/healthz
 |---|---|---|
 | `GET` | `/healthz` | 存活检查 |
 | `GET` | `/api/dataset` | 数据版本、试验数量、模型状态 |
+| `GET` | `/api/disease-concepts` | 本体版本和可选疾病概念 |
 | `POST` | `/api/runs` | 创建批量预筛任务 |
 | `GET` | `/api/runs/{id}` | 状态、阶段和进度 |
 | `POST` | `/api/runs/{id}/cancel` | 停止任务并清理中间数据 |
@@ -66,6 +67,23 @@ curl -fsS http://127.0.0.1:8080/healthz
 ```
 
 `SITE_TRIAL_API_TOKEN` 非空时，所有 `/api` 业务请求必须携带 `Authorization: Bearer <token>`。平台接入建议由 CancerDAO 后端持有这个 token 并代理请求，不要写进前端 JavaScript。独立浏览器 Demo 可不设置该变量，改由 Nginx 访问控制限制演示范围。
+
+## 分层疾病本体与模型
+
+生产默认读取 `data/disease_ontology.json`。本体包含稳定概念 ID、版本、父概念和别名；患者与试验概念相同或互为上下位关系时才视为疾病范围兼容，共享“实体瘤”根节点本身不会让乳腺癌与肺癌互相兼容。
+
+启用完整模式：
+
+```dotenv
+SITE_TRIAL_ONTOLOGY=/app/data/disease_ontology.json
+SITE_TRIAL_MODEL_ENABLED=1
+SITE_TRIAL_MODEL_API_KEY=server-side-secret
+SITE_TRIAL_MODEL_BASE_URL=https://api.kimi.com/coding/v1
+SITE_TRIAL_MODEL_NAME=k3
+SITE_TRIAL_MODEL_TEMPERATURE=1
+```
+
+第一层模型只在确定性癌种映射失败时，从 `/api/disease-concepts` 的受控概念中选择并逐字引用患者诊断证据；无法唯一映射时任务不创建。第二层模型只处理确定性预筛留下的试验，对疾病/队列范围、强制入组条件和排除条件做排除优先核查。它不评价疗效、风险、药物价值或治疗推荐，不能输出“符合入组”，证据不足必须保留人工复核。
 
 ## Nginx
 

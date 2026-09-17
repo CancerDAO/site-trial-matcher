@@ -12,6 +12,59 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PipelineTests(unittest.TestCase):
+  def test_composite_breast_histology_uses_explicit_stage_disease(self):
+    from china_trial_demo.normalization import normalize_patient
+    groups = [["非小细胞肺癌", "NSCLC"], ["乳腺癌", "breast cancer"]]
+    patient = normalize_patient({
+      "patient_id": "P-BREAST",
+      "cancer_type": "乳腺浸润性导管癌",
+      "histology": "乳腺浸润性导管癌",
+      "disease_stage": "IV期，转移性乳腺癌",
+    }, groups)
+    self.assertEqual(patient["canonical_cancer_type"], "乳腺癌")
+    self.assertEqual(patient["disease_group_ids"], ["legacy-001"])
+    self.assertEqual(patient["disease_mapping"]["source_field"], "disease_stage")
+
+  def test_unmapped_disease_is_rejected_before_matching(self):
+    from china_trial_demo.normalization import DiseaseMappingError, normalize_patient
+    with self.assertRaisesRegex(DiseaseMappingError, "unmapped_disease"):
+      normalize_patient({"patient_id": "P-UNKNOWN", "cancer_type": "未定义罕见肿瘤"}, [["乳腺癌"]])
+
+  def test_specific_leukemia_keeps_compatible_parent_group(self):
+    from china_trial_demo.normalization import load_aliases, normalize_patient
+    ontology = load_aliases(ROOT / "data" / "disease_ontology.json")
+    patient = normalize_patient({
+      "patient_id": "P-AML", "cancer_type": "白血病", "histology": "急性髓系白血病",
+    }, ontology)
+    self.assertEqual(patient["canonical_cancer_type"], "急性髓系白血病")
+    self.assertEqual(patient["disease_group_ids"], ["aml"])
+    self.assertTrue(ontology.compatible(patient["disease_group_ids"], ["leukemia"]))
+
+  def test_unrelated_disease_sources_are_ambiguous(self):
+    from china_trial_demo.normalization import DiseaseMappingError, normalize_patient
+    groups = [["乳腺癌"], ["卵巢癌"]]
+    with self.assertRaisesRegex(DiseaseMappingError, "ambiguous_disease_mapping"):
+      normalize_patient({
+        "patient_id": "P-CONFLICT", "cancer_type": "乳腺癌", "disease_stage": "转移性卵巢癌",
+      }, groups)
+
+  def test_controlled_model_mapping_requires_catalog_label_and_confidence(self):
+    from china_trial_demo.normalization import DiseaseMappingError, normalize_patient
+    groups = [["乳腺癌", "breast cancer"]]
+    with self.assertRaisesRegex(DiseaseMappingError, "low_confidence"):
+      normalize_patient({
+        "patient_id": "P-LOW", "cancer_type": "复杂病理描述",
+        "canonical_cancer_type": "乳腺癌", "disease_mapping_method": "model_constrained",
+        "disease_mapping_confidence": 0.79,
+      }, groups)
+    patient = normalize_patient({
+      "patient_id": "P-HIGH", "cancer_type": "复杂病理描述",
+      "canonical_cancer_type": "乳腺癌", "disease_mapping_method": "model_constrained",
+      "disease_mapping_confidence": 0.93, "disease_mapping_evidence": "病理诊断：乳腺浸润性癌",
+    }, groups)
+    self.assertEqual(patient["canonical_cancer_type"], "乳腺癌")
+    self.assertEqual(patient["disease_mapping"]["method"], "model_constrained")
+
   def test_duplicate_patient_ids_are_rejected(self):
     with tempfile.TemporaryDirectory() as directory:
       root = Path(directory); patients = root / "patients.jsonl"; output = root / "out.json"
@@ -23,8 +76,8 @@ class PipelineTests(unittest.TestCase):
     from china_trial_demo.retrieval import _group_ids
     groups = [["非小细胞肺癌", "NSCLC", "non-small cell lung cancer"], ["小细胞肺癌", "SCLC", "small cell lung cancer"]]
     self.assertEqual(expand_terms(["非小细胞肺癌"], groups), groups[0])
-    self.assertEqual(_group_ids("非小细胞肺癌 NSCLC", groups), {0})
-    self.assertEqual(_group_ids("小细胞肺癌 SCLC", groups), {1})
+    self.assertEqual(_group_ids("非小细胞肺癌 NSCLC", groups), {"legacy-000"})
+    self.assertEqual(_group_ids("小细胞肺癌 SCLC", groups), {"legacy-001"})
 
   def test_qualified_solid_tumor_wording_is_broad(self):
     from china_trial_demo.retrieval import _is_broad_disease

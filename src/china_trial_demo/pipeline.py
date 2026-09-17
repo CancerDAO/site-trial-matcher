@@ -56,6 +56,9 @@ def match_patient(db_path: str | Path, patient: dict[str, Any], *, aliases_path:
     non_partner_excluded_trials = [item for item in excluded if item["partner_status"] not in PARTNER_STATUSES]
     partner_potential = len(partner_potential_trials); partner_excluded = len(partner_excluded_trials)
     return {"patient_id": normalized["patient_id"], "trial_universe_count": len(trials),
+        "patient_disease": {"original": normalized["cancer_type"], "canonical": normalized["canonical_cancer_type"],
+            "concept_id": normalized["canonical_disease_id"], "ontology_version": normalized["disease_ontology_version"],
+            **normalized["disease_mapping"]},
         "potential_trials": {"partner": partner_potential_trials, "non_partner": non_partner_potential_trials},
         "excluded_trials": {"partner": partner_excluded_trials, "non_partner": non_partner_excluded_trials},
         "summary": {"potential_count": len(potential), "excluded_count": len(excluded), "partner_potential_count": partner_potential,

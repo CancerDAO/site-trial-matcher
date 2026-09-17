@@ -35,6 +35,8 @@ def safe_patient_job_key(patient_id: str, patient_index: int) -> str:
 
 MODEL_PATIENT_FIELDS = {
     "age", "sex", "cancer_type", "primary_disease", "histology", "disease_stage", "stage",
+    "canonical_disease_id", "canonical_cancer_type", "disease_ontology_version",
+    "disease_mapping_method", "disease_mapping_confidence", "disease_mapping_evidence",
     "mutations", "biomarkers", "biomarkers_known", "ecog", "prior_therapies",
     "treatment_lines_completed", "treatment_history", "current_therapy_ongoing",
     "comorbidities", "current_medications", "pregnant", "organ_function", "key_lab_trends",
@@ -128,6 +130,16 @@ def prepare_model_jobs(db_path: str | Path, patients_path: str | Path, determini
     with connect(db_path, readonly=True) as connection:
         for patient_index, patient_result in enumerate(deterministic["results"], start=1):
             patient_id = str(patient_result["patient_id"]); patient = patients[patient_id]
+            disease = patient_result.get("patient_disease") or {}
+            patient = {
+                **patient,
+                "canonical_disease_id": disease.get("concept_id"),
+                "canonical_cancer_type": disease.get("canonical"),
+                "disease_ontology_version": disease.get("ontology_version"),
+                "disease_mapping_method": disease.get("method"),
+                "disease_mapping_confidence": disease.get("confidence"),
+                "disease_mapping_evidence": disease.get("evidence"),
+            }
             # Partnership is an output dimension only. Keep medical job ordering stable
             # when an organization changes between partner and non-partner status.
             items = [*patient_result["potential_trials"]["non_partner"], *patient_result["potential_trials"]["partner"]]

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import re
 import sqlite3
 from typing import Any
 
+from .disease_ontology import DiseaseOntology, as_ontology
 from .normalization import normalized_text
 
 CLOSED_RECRUITMENT_STATUSES = {"暂停招募", "停止招募", "已完成"}
@@ -23,35 +23,10 @@ def is_chinese_trial(trial: dict[str, Any]) -> bool:
     return registry.startswith("chictr") or "chictr.org.cn" in source_url or "china" in countries or "中国" in countries
 
 
-def _group_ids(text: str, alias_groups: list[list[str]]) -> set[int]:
-    key = normalized_text(text)
-    if not key:
-        return set()
-    exact = {index for index, group in enumerate(alias_groups) if key in {normalized_text(term) for term in group}}
-    if exact:
-        return exact
-    result: set[int] = set()
-    for index, group in enumerate(alias_groups):
-        for term in group:
-            term_key = normalized_text(term)
-            raw_text = str(text).casefold()
-            raw_term = str(term).strip().casefold()
-            if not term_key:
-                continue
-            if raw_term == "sclc":
-                matched = re.search(r"(?<![a-z0-9])sclc(?![a-z0-9])", raw_text) is not None
-            elif raw_term == "small cell lung cancer":
-                matched = re.search(r"(?<!non[- ])\bsmall[ -]cell[ -]lung[ -]cancer\b", raw_text) is not None
-            elif term_key == "小细胞肺癌":
-                matched = re.search(r"(?<!非)小细胞肺癌", normalized_text(text)) is not None
-            elif raw_term.isascii() and re.fullmatch(r"[a-z0-9]+", raw_term):
-                matched = re.search(rf"(?<![a-z0-9]){re.escape(raw_term)}(?![a-z0-9])", raw_text) is not None
-            else:
-                matched = term_key in key
-            if matched:
-                result.add(index)
-                break
-    return result
+def _group_ids(
+    text: str, alias_groups: DiseaseOntology | list[list[str]]
+) -> set[str]:
+    return as_ontology(alias_groups).match(text)
 
 
 def _is_broad_disease(text: Any) -> bool:
@@ -64,16 +39,25 @@ def _is_broad_disease(text: Any) -> bool:
     return any(term and term in key for term in generic) and any(term and term in key for term in qualifiers)
 
 
-def disease_assessment(patient: dict[str, Any], trial: dict[str, Any], alias_groups: list[list[str]]) -> dict[str, Any]:
+def disease_assessment(
+    patient: dict[str, Any], trial: dict[str, Any],
+    alias_groups: DiseaseOntology | list[list[str]],
+) -> dict[str, Any]:
     """Conservative check: unknown or broad wording never excludes a trial."""
-    patient_groups = _group_ids(str(patient.get("cancer_type") or ""), alias_groups)
+    ontology = as_ontology(alias_groups)
+    patient_groups = set(patient.get("disease_group_ids") or [])
+    if not patient_groups:
+        patient_groups = _group_ids(str(patient.get("cancer_type") or ""), alias_groups)
     trial_text = " ".join(str(trial.get(key) or "") for key in ("primary_disease", "disease_aliases", "title_zh", "title_en"))
     trial_groups = _group_ids(trial_text, alias_groups)
     broad = _is_broad_disease(trial_text)
     hits = [term for term in patient.get("disease_terms", []) if _contains(trial_text, term)]
-    hard_mismatch = bool(patient_groups and trial_groups and patient_groups.isdisjoint(trial_groups) and not broad)
-    state = "明确不相容" if hard_mismatch else ("疾病相符" if hits or (patient_groups and trial_groups and not patient_groups.isdisjoint(trial_groups)) else "信息不足")
+    compatible = bool(patient_groups and trial_groups and ontology.compatible(patient_groups, trial_groups))
+    hard_mismatch = bool(patient_groups and trial_groups and not compatible and not broad)
+    state = "明确不相容" if hard_mismatch else ("疾病相符" if hits or compatible else "信息不足")
     return {"state": state, "hard_mismatch": hard_mismatch, "patient_group_ids": sorted(patient_groups),
+            "patient_canonical_disease": patient.get("canonical_cancer_type"),
+            "patient_disease_mapping": patient.get("disease_mapping"),
             "trial_group_ids": sorted(trial_groups), "matched_terms": hits, "trial_disease_text": trial_text}
 
 
@@ -97,7 +81,7 @@ def relevance_score(patient: dict[str, Any], trial: dict[str, Any], disease: dic
     return score, matched
 
 
-def load_trial_universe(connection: sqlite3.Connection, patient: dict[str, Any], *, alias_groups: list[list[str]],
+def load_trial_universe(connection: sqlite3.Connection, patient: dict[str, Any], *, alias_groups: DiseaseOntology | list[list[str]],
                         limit: int | None = None, include_inactive_partners: bool = True) -> list[dict[str, Any]]:
     rows = connection.execute("""
         SELECT t.*, o.organization_code, o.organization_name_zh, o.partner_status
