@@ -10,7 +10,7 @@
 
 中国试验采用证据口径：ChiCTR 注册号、ChiCTR 详情链接，或注册数据明确列出 China/中国。国家级记录与已核验研究中心分别保存，不能互相替代。合作关系仅决定输出分组，不参与医学排除判断。
 
-字段映射见 [XML字段映射](docs/XML_FIELD_MAPPING.md)，架构与保守排除逻辑见 [设计说明](docs/DESIGN.md)。
+字段映射见 [XML字段映射](docs/XML_FIELD_MAPPING.md)，架构与保守排除逻辑见 [设计说明](docs/DESIGN.md)，生产数据库建立、原子更新和定时任务见 [数据库运维](docs/OPERATIONS.md)。
 
 ## 合作方模板
 
@@ -29,6 +29,9 @@ python -m china_trial_demo.cli import-xml --db data/demo_recent.db --xml path\pa
 
 # 导入合作方中文模板
 python -m china_trial_demo.cli import-workbook --db data/demo_recent.db --workbook path\合作方模板.xlsx
+
+# 拉取 MCP、构建临时数据库、校验并原子替换生产库
+python -m china_trial_demo.cli refresh-database --db var/trials.db --snapshot var/who-mcp.json --min-trials 100
 
 # MCP 密钥只放环境变量，不写入配置或日志
 $env:WHO_MCP_URL = "https://mcp.example.com/mcp"

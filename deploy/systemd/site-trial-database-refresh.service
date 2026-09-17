@@ -1,0 +1,18 @@
+[Unit]
+Description=Refresh CancerDAO site trial matcher database
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=cancerdao
+Group=cancerdao
+WorkingDirectory=/home/cancerdao/site-trial-matcher
+EnvironmentFile=/home/cancerdao/site-trial-matcher/.env
+ExecStart=/home/cancerdao/site-trial-matcher/.venv/bin/china-trial-demo refresh-database --db /data/trials.db --snapshot /data/snapshots/who-mcp-china.json --limit 300 --scan-limit 10000 --workers 8 --min-trials 100 --allow-partial
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/data
